@@ -1,0 +1,233 @@
+# Отчет о конфликтах при слиянии и принятых решениях
+
+**Лабораторная работа:** «Разработка и интеграция модулей проекта (командная работа)»
+**Проект:** прототип сервиса «Умный планировщик задач»
+**Дата:** 2026-09-14 · **Релиз:** v1.0.0 · **Контракт:** API_CONTRACT.md v1.0
+
+| Роль | Участник | Модуль |
+|---|---|---|
+| Архитектор / Tech Lead, ревьюер | А. Ковалёв | контракт, PR-мержи, интеграционные скрипты |
+| Backend-разработчик | Д. Орлов | Task Service (CRUD, SQLite, очередь вебхуков с retry) |
+| Backend-разработчик | С. Ветрова | Notification Service (вебхук task_created, уведомления) |
+
+---
+
+## 1. Контекст интеграции
+
+Команда работала по схеме contract-first: сначала в `dev` был закоммичен черновик
+контракта v0.1 (коммит `a8a213d`), в котором раздел 5 «Формат сообщения вебхука»
+осознанно остался в статусе **TBD** — точное тело запроса планировалось
+согласовать в ходе работы (Этап 2 задания, п. 4). От `dev` были отведены две
+рабочие ветки, и разработчики трудились параллельно:
+
+- `feature/notifications-service` (С. Ветрова) — 5 коммитов;
+- `feature/tasks-service` (Д. Орлов) — 6 коммитов.
+
+Оба разработчика в конце своей работы **независимо** закрыли TBD-раздел 5
+контракта, предложив каждый свой формат сообщения. Это и породило конфликт.
+
+## 2. Хронология слияния и обнаружение конфликта
+
+1. **PR #1** (feature/notifications-service → dev): открыт С. Ветровой, рассмотрен
+   Архитектором (замечание: возвращать `task_id` в ответе вебхука для сверки
+   доставки; исправление — коммит `19d2ee6`), одобрен и смержен в `dev`
+   (merge-коммит `1d51904`). Вместе с PR #1 в `dev` попала версия раздела 5
+   Ветровой (коммит `f16e86c`): **тело вебхука = объект Task целиком**.
+2. **Обновление ветки вторым разработчиком.** Д. Орлов обновил свою ветку
+   командой `git rebase dev` (аналог `git pull --rebase origin dev` из задания)
+   и получил конфликт:
+
+```text
+Auto-merging API_CONTRACT.md
+CONFLICT (content): Merge conflict in API_CONTRACT.md
+error: could not apply 147edb9... docs(contract): формат вебхука —
+конверт {event, occurred_at, task} + политика доставки
+hint: Resolve all conflicts manually, mark them as resolved with
+hint: "git add/rm <conflicted_files>", then run "git rebase --continue".
+```
+
+3. `git status` зафиксировал единственный конфликтующий файл:
+
+```text
+UU API_CONTRACT.md
+```
+
+## 3. Суть конфликта
+
+**Причина:** обе ветки редактировали один и тот же раздел 5 файла
+`API_CONTRACT.md`, заменяя строку TBD несовместимыми текстами. Git не может
+выбрать вариант автоматически — содержательное противоречие должна разрешить
+команда. Корневая причина организационная: TBD-раздел в подписанном контракте
+позволил каждой стороне трактовать «формат сообщения вебхука» по-своему.
+
+Конфликтное состояние файла (вывод `git`, маркеры конфликта):
+
+```diff
+<<<<<<< HEAD
+- **Заголовки:**
+  - `Content-Type: application/json`
+  - `X-Event-Type: task.created` — идентификатор типа события для фильтрации на стороне получателя
+- **Тело запроса:** **объект Task целиком** — ровно тот JSON, который вернул `POST /api/tasks` (без обёртки/конверта):
+  { "id": "…", "title": "Купить молоко", "description": "2 литра",
+    "status": "new", "created_at": "2026-09-14T07:15:30+00:00" }
+- **Ответ:** `200 OK`
+=======
+- **Тело запроса — конверт события (event envelope):**
+  { "event": "task.created", "occurred_at": "2026-09-14T07:15:30+00:00",
+    "task": { "id": "…", "title": "Купить молоко", … } }
+- **Политика доставки со стороны Task Service:**
+  таймаут 5 c; до 3 попыток, backoff 1/2/4 c; при исчерпании — WEBHOOK_FAILED.
+>>>>>>> 147edb9 (docs(contract): формат вебхука — конверт {event, occurred_at, task} + политика доставки)
+```
+
+## 4. Анализ вариантов и принятое решение
+
+| Критерий | Вариант А (С. Ветрова): тело = объект Task | Вариант Б (Д. Орлов): конверт {event, occurred_at, task} |
+|---|---|---|
+| Соответствие базовому контракту п. 4.1 («Принимает JSON объекта Task») | **полное** | требует изменения п. 4.1 |
+| Валидация на принимающей стороне | та же схема `Task`, без изменений кода | нужна вложенная модель/дискриминатор по `event` |
+| Расширяемость (новые типы событий) | тип события только в заголовке | **лучше** — метаданные в теле |
+| Риск рассинхронизации схем | минимальный | выше (два уровня схемы) |
+| Объем доработок при выборе | 0 (Notification Service уже так работает) | правка валидации получателя |
+
+**Решение команды (согласовано единогласно):** принят **вариант А** — тело вебхука
+равно объекту Task, как в п. 4.1 базового контракта; тип события передается
+заголовком `X-Event-Type: task.created` (идея Орлова сохранена в упрощенном
+виде); политика доставки (таймаут 5 c, до 3 попыток, backoff 1/2/4 c,
+`WEBHOOK_FAILED` в лог) взята из предложения Task Service без изменений.
+Конверт отклонен как избыточный при одном типе событий. Версия контракта
+повышена **0.1 → 1.0**.
+
+## 5. Процедура разрешения (git)
+
+```bash
+# 1. Обновление ветки второго разработчика — конфликт:
+git checkout feature/tasks-service
+git rebase dev                       # CONFLICT (content): Merge conflict in API_CONTRACT.md
+
+# 2. Ручное разрешение: файл API_CONTRACT.md приведен к итоговой версии,
+#    маркеры <<<<<<< / ======= / >>>>>>> удалены, секция 5 согласована,
+#    шапка контракта обновлена до v1.0
+$EDITOR API_CONTRACT.md
+
+# 3. Завершение перебазирования:
+git add API_CONTRACT.md
+git commit -m "docs(contract): разрешение конфликта API_CONTRACT.md — финальный
+формат: тело = объект Task, заголовок X-Event-Type, политика доставки; версия 1.0"
+git rebase --continue
+
+# 4. Приведение кода к утвержденному контракту (Task Service отправлял конверт):
+#    task_service/webhook.py: тело = task, заголовок X-Event-Type
+git commit -m "fix(tasks): тело вебхука приведено к финальному контракту v1.0 —
+объект Task без конверта, заголовок X-Event-Type: task.created"
+
+# 5. Обновленный PR #2 одобрен и смержен в dev:
+git checkout dev && git merge --no-ff feature/tasks-service
+```
+
+Ключевые коммиты разрешения: `4d7160a` (контракт v1.0 — результат ручного
+разрешения при rebase) и `c78ba3d` (исправление тела вебхука в коде Task
+Service). Выбор `rebase` (вместо merge) оправдан заданием: история feature-ветки
+осталась линейной, а конфликт разрешен одним содержательным коммитом.
+
+## 6. Итоговая история (git log --graph --oneline --all --decorate)
+
+```text
+*   1db6f13 (HEAD -> main, tag: v1.0.0) Merge pull request #3 from smart-task-planner/dev
+|\
+| * 3023453 (dev) docs: финальный README — команда, архитектура, запуск, тесты, git-модель, чеклист задания
+| * 1f41148 chore: скрипты запуска сервисов и сквозной smoke-проверки (curl), .env.example
+| *   6bbac82 Merge pull request #2 from smart-task-planner/feature/tasks-service
+| |\
+| | * c78ba3d (feature/tasks-service) fix(tasks): тело вебхука приведено к финальному контракту v1.0 — объект Task без конверта, заголовок X-Event-Type: task.created
+| | * 4d7160a docs(contract): разрешение конфликта API_CONTRACT.md — финальный формат: тело = объект Task, заголовок X-Event-Type, политика доставки; версия 1.0
+| | * b593ea0 docs(tasks): реестр локальных точек отказа Task Service (Т-1..Т-5)
+| | * 5c82f0c test(tasks): pytest — создание задачи, CRUD, валидация и устойчивость к недоступности Notification Service
+| | * 52ab4b7 feat(tasks): CRUD /api/tasks + очередь вебхуков в памяти с retry и backoff (1/2/4 c)
+| | * f24ab84 feat(tasks): модели Pydantic и SQLite-хранилище задач (task_service/db.py)
+| |/
+| *   1d51904 Merge pull request #1 from smart-task-planner/feature/notifications-service
+| |\
+| | * 19d2ee6 (feature/notifications-service) refactor(notifications): по итогам ревью PR#1 — возвращать task_id в ответе вебхука для сверки доставки на стороне отправителя
+| | * f16e86c docs(contract): формат вебхука — тело = объект Task, заголовок X-Event-Type: task.created
+| | * cfaed60 docs(notifications): реестр локальных точек отказа сервиса уведомлений
+| | * 03389e2 test(notifications): pytest — основной сценарий вебхука, health-check и негативные сценарии валидации
+| | * 4cdad7b feat(notifications): каркас FastAPI-сервиса и эндпоинт POST /api/webhooks/task_created с логированием уведомления в консоль
+| |/
+| * a8a213d docs(api): черновик API-контракта v0.1 — схема Task, эндпоинты сервисов, формат вебхука (разд. 5) в статусе TBD
+|/
+* 209ba55 chore: инициализация репозитория (README-заготовка, .gitignore)
+```
+
+## 7. Верификация после разрешения конфликта
+
+**Юнит-тесты (pytest, ветка main):** 11 passed.
+
+```text
+task_service/tests/test_task_service.py
+  test_create_task_returns_201_with_contract_fields PASSED
+  test_create_task_validation_error_empty_title     PASSED
+  test_list_tasks_returns_created_tasks             PASSED
+  test_update_task_status_flow                      PASSED
+  test_delete_task_then_404                         PASSED
+  test_get_unknown_task_returns_404                 PASSED
+  test_task_creation_succeeds_when_notification_service_down PASSED
+notification_service/tests/test_notification_service.py
+  test_task_created_returns_200_and_logs_notification        PASSED
+  test_health_endpoint                                       PASSED
+  test_webhook_rejects_invalid_status                        PASSED
+  test_webhook_rejects_missing_title                         PASSED
+============================== 11 passed in 0.54s ==============================
+```
+
+**Сквозной (end-to-end) тест, оба сервиса запущены:** задача создана (HTTP 201,
+id `4974907f-…`), событие доставлено вебхуком, уведомление зафиксировано:
+
+```text
+# Консоль Task Service
+WEBHOOK_QUEUED    task_id=4974907f-398f-4b7c-a7bd-c7202859a461 queue_size=1
+WEBHOOK_DELIVERED task_id=4974907f-398f-4b7c-a7bd-c7202859a461 attempt=1/3 status=200
+
+# Консоль Notification Service
+НОВОЕ УВЕДОМЛЕНИЕ: создана новая задача
+  id:         4974907f-398f-4b7c-a7bd-c7202859a461
+  название:   Smoke-тест 10:33:18
+  статус:     new
+```
+
+**Сценарий отказа (Notification Service выключен):** создание задачи вернуло
+HTTP 201, после 3 попыток с backoff зафиксирована недоставка — сервис не упал:
+
+```text
+HTTP 201 (задача сохранена: id=50b14f99-206b-4cdd-97b1-3da81bae993a)
+
+WEBHOOK_RETRY task_id=50b14f99… attempt=1/3 ошибка=ConnectError: All connection attempts failed
+WEBHOOK_RETRY task_id=50b14f99… attempt=2/3 ошибка=ConnectError: All connection attempts failed
+WEBHOOK_RETRY task_id=50b14f99… attempt=3/3 ошибка=ConnectError: All connection attempts failed
+WEBHOOK_FAILED task_id=50b14f99… попыток=3 последняя_ошибка=ConnectError… —
+уведомление не доставлено (best-effort, задача сохранена)
+```
+
+Обе стороны валидируют один и тот же формат тела (объект Task) — расхождений,
+из-за которых возник конфликт, больше нет; доставка подтверждена сквозным тестом.
+
+## 8. Выводы и уроки
+
+1. **TBD в контракте — отложенный конфликт.** Подписание контракта с незакрытым
+   разделом позволило двум разработчикам реализовать несовместимые форматы.
+   Дешевле закрыть все открытые вопросы до ветвления feature-веток.
+2. **Конфликт был выявлен быстро и дешево** именно благодаря изоляции веток:
+   он локализовался в одном файле документации и не затронул код.
+3. **Code review работает:** замечание Архитектора в PR #1 было исправлено
+   отдельным коммитом до слияния.
+4. **Контракт без владельца не работает.** Финальную версию утвердила вся
+   команда, и оба модуля синхронно привели код к v1.0 — это суть contract-first.
+5. **Rebase сохраняет историю читаемой:** история feature-ветки линейна,
+   решение конфликта оформлено одним содержательным коммитом.
+
+## 9. Рекомендации команде на следующие итерации
+
+- Вводить в контракте правило «no open TBD при отведении feature-веток» + проверку в PR-шаблоне.
+- Захардкодить схему вебхука JSON Schema/OpenAPI и валидировать её в CI обеих сторон.
+- Для событий разных типов в будущем — обсуждать конверт заранее (как отдельную версию контракта).
+- Рассмотреть персистентную очередь (Redis Stream/RabbitMQ) вместо очереди в памяти — точки отказа Т-2/Т-3 задокументированы в `docs/failure_points_task_service.md`.
