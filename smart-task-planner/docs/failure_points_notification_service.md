@@ -1,6 +1,6 @@
 # Локальные точки отказа — Notification Service
 
-- **Автор:** С. Ветрова (Backend-разработчик Notification Service)
+- **Автор:** Васильев Н.С. (Backend-разработчик Notification Service)
 - **Дата:** 2026-09-14
 - **Связанный документ:** `API_CONTRACT.md`, раздел 5 (политика доставки со стороны Task Service)
 
