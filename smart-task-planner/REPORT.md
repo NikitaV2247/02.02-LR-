@@ -6,9 +6,9 @@
 
 | Роль | Участник | Модуль |
 |---|---|---|
-| Архитектор / Tech Lead, ревьюер | А. Ковалёв | контракт, PR-мержи, интеграционные скрипты |
-| Backend-разработчик | Д. Орлов | Task Service (CRUD, SQLite, очередь вебхуков с retry) |
-| Backend-разработчик | С. Ветрова | Notification Service (вебхук task_created, уведомления) |
+| Архитектор / Tech Lead, ревьюер | Абдуллаев И.А. | контракт, PR-мержи, интеграционные скрипты |
+| Backend-разработчик | Орлов М.С. | Task Service (CRUD, SQLite, очередь вебхуков с retry) |
+| Backend-разработчик | Васильев Н.С. | Notification Service (вебхук task_created, уведомления) |
 
 ---
 
@@ -103,11 +103,9 @@ UU API_CONTRACT.md
 ```bash
 # 1. Обновление ветки второго разработчика — конфликт:
 git checkout feature/tasks-service
-git rebase dev                       # CONFLICT (content): Merge conflict in API_CONTRACT.md
+git rebase dev                     
 
 # 2. Ручное разрешение: файл API_CONTRACT.md приведен к итоговой версии,
-#    маркеры <<<<<<< / ======= / >>>>>>> удалены, секция 5 согласована,
-#    шапка контракта обновлена до v1.0
 $EDITOR API_CONTRACT.md
 
 # 3. Завершение перебазирования:
@@ -117,7 +115,6 @@ git commit -m "docs(contract): разрешение конфликта API_CONTR
 git rebase --continue
 
 # 4. Приведение кода к утвержденному контракту (Task Service отправлял конверт):
-#    task_service/webhook.py: тело = task, заголовок X-Event-Type
 git commit -m "fix(tasks): тело вебхука приведено к финальному контракту v1.0 —
 объект Task без конверта, заголовок X-Event-Type: task.created"
 
@@ -130,36 +127,7 @@ git checkout dev && git merge --no-ff feature/tasks-service
 Service). Выбор `rebase` (вместо merge) оправдан заданием: история feature-ветки
 осталась линейной, а конфликт разрешен одним содержательным коммитом.
 
-## 6. Итоговая история (git log --graph --oneline --all --decorate)
-
-```text
-*   1db6f13 (HEAD -> main, tag: v1.0.0) Merge pull request #3 from smart-task-planner/dev
-|\
-| * 3023453 (dev) docs: финальный README — команда, архитектура, запуск, тесты, git-модель, чеклист задания
-| * 1f41148 chore: скрипты запуска сервисов и сквозной smoke-проверки (curl), .env.example
-| *   6bbac82 Merge pull request #2 from smart-task-planner/feature/tasks-service
-| |\
-| | * c78ba3d (feature/tasks-service) fix(tasks): тело вебхука приведено к финальному контракту v1.0 — объект Task без конверта, заголовок X-Event-Type: task.created
-| | * 4d7160a docs(contract): разрешение конфликта API_CONTRACT.md — финальный формат: тело = объект Task, заголовок X-Event-Type, политика доставки; версия 1.0
-| | * b593ea0 docs(tasks): реестр локальных точек отказа Task Service (Т-1..Т-5)
-| | * 5c82f0c test(tasks): pytest — создание задачи, CRUD, валидация и устойчивость к недоступности Notification Service
-| | * 52ab4b7 feat(tasks): CRUD /api/tasks + очередь вебхуков в памяти с retry и backoff (1/2/4 c)
-| | * f24ab84 feat(tasks): модели Pydantic и SQLite-хранилище задач (task_service/db.py)
-| |/
-| *   1d51904 Merge pull request #1 from smart-task-planner/feature/notifications-service
-| |\
-| | * 19d2ee6 (feature/notifications-service) refactor(notifications): по итогам ревью PR#1 — возвращать task_id в ответе вебхука для сверки доставки на стороне отправителя
-| | * f16e86c docs(contract): формат вебхука — тело = объект Task, заголовок X-Event-Type: task.created
-| | * cfaed60 docs(notifications): реестр локальных точек отказа сервиса уведомлений
-| | * 03389e2 test(notifications): pytest — основной сценарий вебхука, health-check и негативные сценарии валидации
-| | * 4cdad7b feat(notifications): каркас FastAPI-сервиса и эндпоинт POST /api/webhooks/task_created с логированием уведомления в консоль
-| |/
-| * a8a213d docs(api): черновик API-контракта v0.1 — схема Task, эндпоинты сервисов, формат вебхука (разд. 5) в статусе TBD
-|/
-* 209ba55 chore: инициализация репозитория (README-заготовка, .gitignore)
-```
-
-## 7. Верификация после разрешения конфликта
+## 6. Верификация после разрешения конфликта
 
 **Юнит-тесты (pytest, ветка main):** 11 passed.
 
@@ -211,7 +179,7 @@ WEBHOOK_FAILED task_id=50b14f99… попыток=3 последняя_ошиб�
 Обе стороны валидируют один и тот же формат тела (объект Task) — расхождений,
 из-за которых возник конфликт, больше нет; доставка подтверждена сквозным тестом.
 
-## 8. Выводы и уроки
+## 7. Выводы и уроки
 
 1. **TBD в контракте — отложенный конфликт.** Подписание контракта с незакрытым
    разделом позволило двум разработчикам реализовать несовместимые форматы.
@@ -225,9 +193,3 @@ WEBHOOK_FAILED task_id=50b14f99… попыток=3 последняя_ошиб�
 5. **Rebase сохраняет историю читаемой:** история feature-ветки линейна,
    решение конфликта оформлено одним содержательным коммитом.
 
-## 9. Рекомендации команде на следующие итерации
-
-- Вводить в контракте правило «no open TBD при отведении feature-веток» + проверку в PR-шаблоне.
-- Захардкодить схему вебхука JSON Schema/OpenAPI и валидировать её в CI обеих сторон.
-- Для событий разных типов в будущем — обсуждать конверт заранее (как отдельную версию контракта).
-- Рассмотреть персистентную очередь (Redis Stream/RabbitMQ) вместо очереди в памяти — точки отказа Т-2/Т-3 задокументированы в `docs/failure_points_task_service.md`.
