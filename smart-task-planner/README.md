@@ -9,9 +9,9 @@
 
 | Роль | Участник | Зона ответственности | Git-автор |
 |---|---|---|---|
-| Архитектор / Tech Lead | А. Ковалёв | API-контракт, код-ревью, merge PR, разрешение конфликтов, скрипты интеграции | `kovalev@team.dev` |
-| Backend, Task Service | Д. Орлов | CRUD задач, SQLite-хранилище, очередь вебхуков с retry, тесты | `orlov@team.dev` |
-| Backend, Notification Service | С. Ветрова | Приём вебхуков, уведомления, тесты | `vetrova@team.dev` |
+| Архитектор / Tech Lead | Абдуллаев И. А. | API-контракт, код-ревью, merge PR, разрешение конфликтов, скрипты интеграции | `kovalev@team.dev` |
+| Backend, Task Service | Орлов М. С.  | CRUD задач, SQLite-хранилище, очередь вебхуков с retry, тесты | `orlov@team.dev` |
+| Backend, Notification Service | Васильев Н. С. | Приём вебхуков, уведомления, тесты | `vetrova@team.dev` |
 
 Ветка `main` защищена: изменения попадают в неё только через PR (dev → main) после код-ревью Архитектора.
 
@@ -99,7 +99,7 @@ smart-task-planner/
 ├── API_CONTRACT.md                      # контракт v1.0 (источник истины)
 ├── REPORT.md                            # отчет о конфликте слияния (Этап 5)
 ├── .env.example                         # пример переменных окружения
-├── task_service/                        # модуль Д. Орлова
+├── task_service/                        # модуль Орлов М. С. а
 │   ├── main.py                          # FastAPI: POST/GET/PUT/DELETE /api/tasks, /health
 │   ├── models.py                        # Pydantic-схемы (по контракту)
 │   ├── db.py                            # SQLite-репозиторий (stdlib sqlite3)
@@ -122,8 +122,8 @@ smart-task-planner/
 ```
 main (защищена) ── PR ──► только merge-коммиты «Merge pull request #N»
  └── dev (интеграционная)
-      ├── PR #1 ◄── feature/notifications-service (С. Ветрова)
-      ├── PR #2 ◄── feature/tasks-service (Д. Орлов) — rebase на dev,
+      ├── PR #1 ◄── feature/notifications-service (Васильев Н. С.)
+      ├── PR #2 ◄── feature/tasks-service (Орлов М. С. ) — rebase на dev,
       │             ручное разрешение конфликта API_CONTRACT.md
       └── PR #3 ──► dev → main (интеграционный релиз v1.0.0)
 ```
