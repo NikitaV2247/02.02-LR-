@@ -62,7 +62,7 @@ pip install -r task_service/requirements.txt -r notification_service/requirement
 
 ```bash
 # юнит-тесты обоих сервисов
-pytest task_service notification_service -v
+python3 -m pytest task_service notification_service -v
 ```
 
 - **task_service/tests** — основной сценарий (POST /api/tasks → 201 со всеми полями контракта), CRUD, валидация (422) и **устойчивость к недоступности Notification Service** (retry, затем `WEBHOOK_FAILED`, создание задачи не падает).
